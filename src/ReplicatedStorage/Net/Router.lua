@@ -15,11 +15,16 @@ local Schema = require(script.Parent.Schema)
 local Router = {}
 Router.__index = Router
 
+local function isPlayerLike(value)
+	return typeof(value) == "Instance" or type(value) == "table"
+end
+
 local function playerKey(player)
-	if type(player) == "table" then
-		return player.UserId or player.Name or tostring(player)
+	if not isPlayerLike(player) then
+		return tostring(player)
 	end
-	return tostring(player)
+
+	return player.UserId or player.Name or tostring(player)
 end
 
 function Router.new(config)
@@ -68,8 +73,8 @@ function Router:reject(player, name, reason, packed, detail)
 		Remote = name,
 		Reason = reason,
 		Detail = detail,
-		UserId = type(player) == "table" and player.UserId or nil,
-		PlayerName = type(player) == "table" and player.Name or nil,
+		UserId = isPlayerLike(player) and player.UserId or nil,
+		PlayerName = isPlayerLike(player) and player.Name or nil,
 		ArgCount = packed and packed.n or 0,
 	})
 end

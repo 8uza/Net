@@ -46,10 +46,10 @@ function Client:Invoke(name, timeout, ...)
 	local args = table.pack(...)
 	local signal = Instance.new("BindableEvent")
 	local done = false
-	local success, payload
+	local results
 
 	task.spawn(function()
-		success, payload = pcall(invokeRemote.InvokeServer, invokeRemote, name, table.unpack(args, 1, args.n))
+		results = table.pack(pcall(invokeRemote.InvokeServer, invokeRemote, name, table.unpack(args, 1, args.n)))
 		done = true
 
 		if signal then
@@ -59,17 +59,22 @@ function Client:Invoke(name, timeout, ...)
 		end
 	end)
 
-	local finished = signal.Event:Wait(timeout)
+	signal.Event:Wait(timeout)
+
 	local completed = done
 
 	signal:Destroy()
 	signal = nil
 
-	if not finished or not completed then
+	if not completed then
 		return false, "timeout"
 	end
 
-	return success, payload
+	if results[1] ~= true then
+		return false, tostring(results[2])
+	end
+
+	return table.unpack(results, 2, results.n)
 end
 
 return Client

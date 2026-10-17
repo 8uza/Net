@@ -1,152 +1,99 @@
-# Net — a secure remote layer for Roblox
+# Net
 
-A drop-in replacement for hand-rolled `RemoteEvent` wiring. Declare your remotes
-once with a type schema, and every call gets validated, rate limited and logged
-on the server before your handler ever sees it.
+Remotes without the ceremony.
+
+You normally make a `RemoteEvent`, drop it in `ReplicatedStorage`, then
+`WaitForChild` it from every script that needs it. Net replaces that with one
+table. You declare your remotes, and then call them by name:
 
 ```lua
 -- server
 local Net = require(ReplicatedStorage.Net.Server.Server)
+
 Net:Handle("AddGold", function(player, amount)
 	print(player.Name, "asked for", amount, "gold")
 end)
+```
 
+```lua
 -- client
 local Net = require(ReplicatedStorage.Net.Client.Client)
+
 Net:Fire("AddGold", 25)
 local ok, rank = Net:Invoke("GetRank")
 ```
 
-## Why
-
-A `RemoteEvent` has no idea what it is supposed to carry. `AddGold` and `SetName`
-are both "RemoteEvent, FireServer, some numbers", and nothing stops a client
-firing either one a thousand times a second with `math.huge` where a small
-integer was expected. The usual result is a handler that trusts its arguments
-and a leaderboard full of NaN.
-
-This puts a schema and a rate limit in between, on the server, where they can
-actually be enforced.
-
-## What it does
-
-- **Declared schemas.** Every remote declares its arguments as types, with
-  optional `Min` / `Max` / `MaxLength`. Validated server-side before dispatch.
-- **Token bucket rate limiting.** Per player *and* per remote, so one chatty
-  remote cannot starve the others, and one player cannot exhaust the budget for
-  everyone else.
-- **`Fire` and `Invoke`.** Fire is one-way. Invoke returns a value with a
-  configurable timeout, so a server handler that forgets to return cannot hang
-  the calling thread forever.
-- **Rejection log.** Unknown remotes, bad arguments, rate limited calls and
-  throwing handlers are all recorded with a reason, in a bounded ring buffer.
-- **Error isolation.** A handler that throws is caught, logged, and does not take
-  down the connection or the other remotes.
-- **Non-destructive.** Rejections never partially apply: argument validation runs
-  before the handler, not after.
+The win isn't shorter call sites. It's that every remote's arguments are
+described in one place and checked on the server before your handler runs, so
+nobody has to remember to validate.
 
 ## Install
 
-Copy these into your place, keeping the exact paths — the modules `WaitForChild`
-on each other.
+There's no Rojo file in here, so copy things by hand. The paths matter, the
+modules `WaitForChild` on each other.
 
-| From                                              | To                                                     |
-| ------------------------------------------------- | ------------------------------------------------------ |
-| `src/ReplicatedStorage/Net/Config.lua`            | `ReplicatedStorage > Net > Config` (ModuleScript)      |
-| `src/ReplicatedStorage/Net/Schema.lua`            | `ReplicatedStorage > Net > Schema` (ModuleScript)      |
-| `src/ReplicatedStorage/Net/RateLimiter.lua`       | `ReplicatedStorage > Net > RateLimiter` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Log.lua`               | `ReplicatedStorage > Net > Log` (ModuleScript)         |
-| `src/ReplicatedStorage/Net/Router.lua`            | `ReplicatedStorage > Net > Router` (ModuleScript)      |
-| `src/ReplicatedStorage/Net/Server/Server.lua`     | `ReplicatedStorage > Net > Server > Server` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Client/Client.lua`     | `ReplicatedStorage > Net > Client > Client` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Tests/TestKit.lua`     | `ReplicatedStorage > Net > Tests > TestKit` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Tests/RateLimiter.spec.lua` | `ReplicatedStorage > Net > Tests > RateLimiter.spec` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Tests/Schema.spec.lua` | `ReplicatedStorage > Net > Tests > Schema.spec` (ModuleScript) |
-| `src/ReplicatedStorage/Net/Tests/Router.spec.lua` | `ReplicatedStorage > Net > Tests > Router.spec` (ModuleScript) |
-| `src/ServerScriptService/NetBootstrap.server.lua` | `ServerScriptService > NetBootstrap` (Script)          |
-| `src/StarterPlayer/StarterPlayerScripts/NetBootstrap.client.lua` | `StarterPlayer > StarterPlayerScripts > NetBootstrap` (LocalScript) |
-| `src/StarterPlayer/StarterPlayerScripts/NetTests.client.lua` | `StarterPlayer > StarterPlayerScripts > NetTests` (LocalScript) |
+```
+src/ReplicatedStorage/Net/          ->  ReplicatedStorage > Net
+src/ServerScriptService/            ->  ServerScriptService
+src/StarterPlayer/                  ->  StarterPlayer > StarterPlayerScripts
+```
 
-The spec files are named `RateLimiter.spec` in Studio but end in `.spec.lua` on
-disk so editors highlight them as Lua. Rename them on import.
+That covers everything:
 
-You do not have to create the `Remotes` folder or the two remotes inside it —
-`Server.lua` creates them on boot. You will see `ReplicatedStorage > Net >
-Remotes > NetFire` / `NetInvoke` appear when the server starts.
+| File | Goes in | Type |
+| --- | --- | --- |
+| `Net/Config.lua` | `ReplicatedStorage > Net` | ModuleScript |
+| `Net/Schema.lua` | `ReplicatedStorage > Net` | ModuleScript |
+| `Net/RateLimiter.lua` | `ReplicatedStorage > Net` | ModuleScript |
+| `Net/Log.lua` | `ReplicatedStorage > Net` | ModuleScript |
+| `Net/Router.lua` | `ReplicatedStorage > Net` | ModuleScript |
+| `Net/Server/Server.lua` | `ReplicatedStorage > Net > Server` | ModuleScript |
+| `Net/Client/Client.lua` | `ReplicatedStorage > Net > Client` | ModuleScript |
+| `Net/Tests/TestKit.lua` | `ReplicatedStorage > Net > Tests` | ModuleScript |
+| `Net/Tests/*.spec.lua` | `ReplicatedStorage > Net > Tests` | ModuleScript |
+| `NetBootstrap.server.lua` | `ServerScriptService` | Script |
+| `NetBootstrap.client.lua` | `StarterPlayerScripts` | LocalScript |
+| `NetTests.client.lua` | `StarterPlayerScripts` | LocalScript |
 
-## Usage
+Press play afterwards. You should see `29 passed, 0 failed`, and a
+`Net > Remotes` folder appear with `NetFire` and `NetInvoke` in it. Net creates
+those two for you, you don't add them yourself.
 
-Declare a remote in `Config.lua`:
+## Declaring remotes
+
+Everything lives in `Net/Config.lua`:
 
 ```lua
-Remotes = {
-	BuyItem = {
-		Kind = "Fire",
-		Args = {
-			{ Name = "ItemId", Type = "string", MaxLength = 32 },
-			{ Name = "Quantity", Type = "number", Min = 1, Max = 99 },
-		},
-		Limit = { Burst = 3, Refill = 1 },
+BuyItem = {
+	Kind = "Fire",
+	Args = {
+		{ Name = "ItemId", Type = "string", MaxLength = 32 },
+		{ Name = "Quantity", Type = "number", Min = 1, Max = 99 },
 	},
+	Limit = { Burst = 3, Refill = 1 },
+},
 
-	GetBalance = {
-		Kind = "Invoke",
-		Args = {},
-		Returns = { "number" },
-	},
-}
+GetBalance = {
+	Kind = "Invoke",
+	Args = {},
+	Returns = { "number" },
+},
 ```
 
-Then register a server handler and call from the client:
+`Fire` is one way. `Invoke` sends back a value, and gives up after
+`Config.InvokeTimeout` seconds instead of hanging forever if the server never
+replies.
 
-```lua
-Net:Handle("BuyItem", function(player, itemId, quantity)
-	-- quantity is guaranteed to be a number in [1, 99] here
-end)
+Arg specs take `Type` plus whatever bounds apply to it: `Min` and `Max` for
+numbers, `MaxLength` for strings. A bare `"number"` is shorthand when you don't
+need bounds.
 
-Net:Handle("GetBalance", function(player)
-	return 100
-end)
-```
+`Limit` is a token bucket. `Burst` is how many calls back to back, `Refill` is
+how many per second after that. Remotes without one use `Config.DefaultLimit`.
 
-```lua
-Net:Fire("BuyItem", "sword_01", 2)
+## When a call gets rejected
 
-local ok, balance = Net:Invoke("GetBalance", 2)
-if not ok then
-	warn("failed: " .. tostring(balance))
-end
-```
-
-### Types and bounds
-
-| Spec                                | Accepts                        |
-| ----------------------------------- | ------------------------------ |
-| `"string"`                           | any string                     |
-| `{ Type = "string", MaxLength = 20 }` | string up to 20 characters     |
-| `"number"`                           | any finite number              |
-| `{ Type = "number", Min = 0, Max = 100 }` | number in range          |
-| `"boolean"` / `"table"`              | matching type                  |
-
-`NaN` and `math.huge` are rejected as `"number"`. That is deliberate: `NaN` is the
-classic way to permanently corrupt a stored currency value, since every later
-comparison against it is false.
-
-### Rejection reasons
-
-`Log.Recent()` returns entries with a `Reason` of:
-
-| Reason            | Meaning                                                |
-| ----------------- | ------------------------------------------------------ |
-| `unknown-remote`  | name is not in the schema                              |
-| `wrong-kind`      | `Fire` used on an `Invoke` remote, or the reverse       |
-| `rate-limited`    | the player's bucket for that remote was empty          |
-| `expected-*`      | argument type mismatch                                 |
-| `arg*-too-long` / `arg*-below-min` / `arg*-above-max` | bound violation      |
-| `expected-N-args` | wrong number of arguments                              |
-| `no-handler`      | declared in Config but no `Handle` call on the server  |
-| `handler-error`   | the handler threw; the message is in `Detail`          |
-| `schema-error`    | the spec itself is malformed                           |
+Rejections come back as a reason string you can log, and land in `Net.Log`:
 
 ```lua
 local Log = require(ReplicatedStorage.Net.Log)
@@ -156,61 +103,76 @@ for _, entry in Log.Recent(10) do
 end
 ```
 
-## Config reference
+| Reason | |
+| --- | --- |
+| `unknown-remote` | not in the config |
+| `wrong-kind` | `Fire` on an `Invoke` remote |
+| `rate-limited` | out of tokens for that player |
+| `expected-*` | argument was the wrong type |
+| `arg*-too-long` | over `MaxLength` |
+| `arg*-below-min` / `arg*-above-max` | out of bounds |
+| `expected-N-args` | wrong number of arguments |
+| `no-handler` | declared but you never called `Handle` |
+| `handler-error` | your handler threw, message is in `Detail` |
+| `bad-returns` | handler returned the wrong shape |
 
-| Setting            | Default | Meaning                                                       |
-| ------------------ | ------- | ------------------------------------------------------------- |
-| `RemoteFolderName` | `Remotes` | folder the generated remotes live in                       |
-| `DefaultLimit`     | `{ Burst = 10, Refill = 5 }` | used by any remote without its own `Limit` |
-| `ClientLimit`      | `{ Burst = 20, Refill = 10 }` | outgoing client limiter                       |
-| `InvokeTimeout`    | `5`     | seconds before `Invoke` gives up                             |
-| `LogCapacity`      | `100`   | rejections kept in memory                                    |
+`NaN` and `math.huge` both fail as `number`. Worth knowing before you find out
+the hard way, since a single `NaN` in a stored value makes every later
+comparison against it false.
 
-`Burst` is how many calls are allowed back to back; `Refill` is how many per
-second the bucket recovers.
+The log is capped at `Config.LogCapacity` entries and holds argument *counts*,
+never argument values. Payloads on this path come from people actively trying
+to break something, so there's no reason to keep them.
 
 ## Tests
 
-Press **Play** and read the Output window:
+`NetTests.client.lua` picks up every ModuleScript in `Net/Tests` and runs it, so
+you can add a spec file and forget about it. Output looks like:
 
 ```
-[Net] running test suite
+[Net] running test suite (3 spec files)
   ok   RateLimiter > allows a full burst at t=0
   ...
 [Net] 29 passed, 0 failed
-[Net] all 29 tests passed
 ```
 
-`Router` takes a plain table as the player and knows nothing about remotes or
-Roblox services, so the whole decision layer is testable without a server, a
-client, or a running place.
+No TestEZ, no install, just press play.
 
-## What this does not do
+## Where it stops
 
-Being straight about the limits, since a framework like this invites
-over-trusting:
+Worth being clear about these, since a framework like this is easy to
+over-trust:
 
-- **The client-side limiter is not security.** `ClientLimit` only catches
-  accidental spam in your own game code. A real attacker edits the client and
-  removes it. Only the server side can refuse anything.
-- **It does not make handlers safe.** It validates *shape*. If
-  `Net:Handle("BuyItem")` grants an item based on a client-supplied price, the
-  exploit is in your handler, not in the transport. Keep authoritative values on
-  the server.
-- **No cross-server rate limiting.** Buckets live in one server's memory and
-  reset when it closes. Someone who can leave and rejoin resets their budget.
-- **The log is in-memory only.** It is lost when the server closes, and it is a
-  debugging aid, not an audit trail. Pipe it somewhere durable if you need one.
-- **`Log` is a shared singleton.** Fine for a single Router, but two independent
-  routers would write to the same buffer.
-- **Not battle-tested at scale.** Session locking, teleport handoff and shutdown
-  ordering — the things that actually bite in production — are not handled here.
+- **The client-side limiter is not security.** `ClientLimit` exists to catch
+  `Fire` inside a `while true` in your own code. Someone attacking you edits
+  the client and deletes it. Only the server side refuses anything.
+- **Schema checks are shape, not meaning.** Net knows `Amount` is a number
+  between 1 and 1000. It has no idea whether the player earned it. If your
+  handler grants an item based on a price the client sent, that exploit is in
+  your handler.
+- **Limits are per session.** Buckets live in one server's memory. Leaving and
+  rejoining resets them, so it's not a substitute for anything that needs to
+  survive a rejoin.
+- **`Log` is a shared singleton.** Fine for one Router, two would write to the
+  same buffer.
+- **`Handle` will happily overwrite.** Registering the same remote name twice
+  is silent, last one wins.
+- **Not tested at scale.** Session locking, teleport handoff and shutdown
+  ordering aren't handled here.
+
+## Tests vs reality
+
+The unit tests pass plain tables where the game passes real `Player` objects,
+and nothing in them crosses a network boundary. That gap is real: two bugs got
+past all 29 of them, a `type(player) == "table"` check that never matched a
+`Player` (that's an Instance, `type` returns `"Instance"`), and an `Invoke` that
+dropped the server's return value on the floor. Both showed up the first time
+something was actually run. Worth assuming your integration bugs are still out
+there.
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, redistribute and sell, including as part of
-a paid package or game. The only requirements are that the copyright notice
-stays with copies of the code, and that the software is provided without
-warranty.
+MIT, see [LICENSE](LICENSE). Use it, sell it, change it, just leave the notice.
 
-Change the name in `LICENSE` before publishing if it should not be yours.
+You can copy this into a place and use it without Net being published at all.
+If you want a Rojo file, the tree in `src/` maps to the DataModel directly.

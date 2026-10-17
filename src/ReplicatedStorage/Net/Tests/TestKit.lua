@@ -93,10 +93,14 @@ end
 function TestKit.run(specs)
 	TestKit.reset()
 
-	print("[Net] running test suite")
+	print(("[Net] running test suite (%d spec files)"):format(#specs))
 
-	for _, spec in specs do
-		spec(TestKit)
+	for _, spec in ipairs(specs) do
+		local ok, err = pcall(spec, TestKit)
+
+		if not ok then
+			TestKit.fail(("spec file threw: %s"):format(tostring(err)))
+		end
 	end
 
 	print(("[Net] %d passed, %d failed"):format(state.passed, state.failed))

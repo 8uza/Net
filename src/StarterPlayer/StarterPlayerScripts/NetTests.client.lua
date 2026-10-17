@@ -1,13 +1,24 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local tests = ReplicatedStorage:WaitForChild("Net"):WaitForChild("Tests")
-local TestKit = require(tests:WaitForChild("TestKit"))
+local kitInstance = tests:WaitForChild("TestKit")
+local TestKit = require(kitInstance)
 
-local specs = {
-	require(tests:WaitForChild("RateLimiter.spec")),
-	require(tests:WaitForChild("Schema.spec")),
-	require(tests:WaitForChild("Router.spec")),
-}
+local specs = {}
+
+for _, child in ipairs(tests:GetChildren()) do
+	if child:IsA("ModuleScript") and child ~= kitInstance then
+		table.insert(specs, { name = child.Name, run = require(child) })
+	end
+end
+
+table.sort(specs, function(a, b)
+	return a.name < b.name
+end)
+
+for index, spec in ipairs(specs) do
+	specs[index] = spec.run
+end
 
 local passed, failed = TestKit.run(specs)
 
