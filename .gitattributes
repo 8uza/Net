@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Roblox instance files are XML - keep them LF so diffs stay readable
+*.rbxmx text eol=lf
+
+# Build output
+*.rbxlx binary
+*.rbxl binary

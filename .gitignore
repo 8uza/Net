@@ -1,0 +1,12 @@
+# Roblox build output
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlsm
+*.rbxmx.lock
+sourcemap.json
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.vscode/

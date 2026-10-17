@@ -1,0 +1,10 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local netRoot = ReplicatedStorage:WaitForChild("Net")
+local module = netRoot:WaitForChild("Client"):WaitForChild("Client")
+
+local ok, err = pcall(require, module)
+
+if not ok then
+	warn("[Net] client module failed to load: " .. tostring(err))
+end
